@@ -1,10 +1,24 @@
 package cn.surveyking.server.core.security;
 
+import cn.hutool.core.date.DateUtil;
+import cn.hutool.core.exceptions.ValidateException;
+import cn.hutool.core.util.ObjUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSON;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
+import cn.hutool.jwt.JWT;
+import cn.hutool.jwt.JWTUtil;
+import cn.hutool.jwt.JWTValidator;
 import cn.surveyking.server.core.config.WebSecurityConfig;
 import cn.surveyking.server.core.constant.AppConsts;
 import cn.surveyking.server.core.uitls.ContextHelper;
+import cn.surveyking.server.domain.dto.UserInfo;
 import cn.surveyking.server.service.UserService;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -40,47 +54,96 @@ public class JwtTokenFilter extends OncePerRequestFilter {
 
 	private final RestAuthenticationEntryPoint resolveException;
 
+	protected static final String TOKEN_TYPE_BEARER = "Bearer ";
+
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
+		String authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+		String deviceId = request.getHeader("x-device-id");
+		String accessToken = authorizationHeader.substring(TOKEN_TYPE_BEARER.length());
+		if (StrUtil.isEmpty(deviceId) || StrUtil.isEmpty(accessToken)) {
+			chain.doFilter(request, response);
+			return;
+		}
+		JWT jwt = JWTUtil.parseToken(accessToken);
+		StringRedisTemplate redisTemplate = ContextHelper.getBean(StringRedisTemplate.class);
+		Object sub = jwt.getPayload().getClaim("sub");
+		String tokenKey = String.format("tokens:%s:%s", sub, deviceId);
+		int leeway = 0;
+		boolean isInValid = false;
+		try {
+			JWTValidator.of(jwt).validateDate(DateUtil.date(), leeway);
+		} catch (ValidateException e) {
+			isInValid = true;
+		}
+		if (isInValid) {
+			// 如果token校验无效，则自动删除掉；
+			redisTemplate.opsForHash().delete(tokenKey, accessToken);
+			chain.doFilter(request, response);
+			return;
+		}
+		Boolean hasKey = redisTemplate.opsForHash().hasKey(tokenKey, accessToken);
+		if (!hasKey) {
+			chain.doFilter(request, response);
+			return;
+		}
+		// 从user的缓存中获取user对象的值，如果没有也报错；
+		String userCacheKey = String.format("user:%s", sub);
+		Object userData = redisTemplate.opsForValue().get(userCacheKey);
+		if (ObjUtil.isEmpty(userData)) {
+			chain.doFilter(request, response);
+			return;
+		}
 		// Get authorization cookie and validate
-		Cookie tokenFromCookie = WebUtils.getCookie(request, AppConsts.TOKEN_NAME);
-		WebSecurityConfig securityConfig = ContextHelper.getBean(WebSecurityConfig.class);
-		String tokenFromParameter = securityConfig.getUrlTokenAuthentication().isEnabled()
-				? request.getParameter(AppConsts.TOKEN_NAME) : null;
-		if (tokenFromCookie == null && isBlank(tokenFromParameter)) {
-			chain.doFilter(request, response);
-			return;
-		}
+		// Cookie tokenFromCookie = WebUtils.getCookie(request, AppConsts.TOKEN_NAME);
+		// WebSecurityConfig securityConfig = ContextHelper.getBean(WebSecurityConfig.class);
+		// String tokenFromParameter = securityConfig.getUrlTokenAuthentication().isEnabled()
+		// 		? request.getParameter(AppConsts.TOKEN_NAME)
+		// 		: null;
+		// if (tokenFromCookie == null && isBlank(tokenFromParameter)) {
+		// 	chain.doFilter(request, response);
+		// 	return;
+		// }
 
-		// Get jwt token and validate
-		final String token = isNotBlank(tokenFromParameter) ? tokenFromParameter : tokenFromCookie.getValue().trim();
-		if (!jwtTokenUtil.validate(token)) {
-			chain.doFilter(request, response);
-			return;
-		}
+		// // Get jwt token and validate
+		// final String token = isNotBlank(tokenFromParameter) ? tokenFromParameter : tokenFromCookie.getValue().trim();
+		// if (!jwtTokenUtil.validate(token)) {
+		// 	chain.doFilter(request, response);
+		// 	return;
+		// }
 
 		try {
 			// Get user identity and set it on the spring security context
-			UserDetails userDetails = userService.loadUserById(jwtTokenUtil.getUser(token).getUserId());
+			// UserDetails userDetails = userService.loadUserById(jwtTokenUtil.getUser(token).getUserId());
 
+			// UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(userDetails,
+			// 		null, ofNullable(userDetails).map(UserDetails::getAuthorities).orElse(new ArrayList<>()));
+			// authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+			// SecurityContextHolder.getContext().setAuthentication(authentication);
+
+			// // Execute login
+			// if (tokenFromCookie == null && tokenFromParameter != null) {
+			// 	Cookie cookie = new Cookie(AppConsts.TOKEN_NAME, tokenFromParameter);
+			// 	cookie.setPath("/");
+			// 	cookie.setHttpOnly(true);
+			// 	response.addCookie(cookie);
+			// }
+
+			// chain.doFilter(request, response);
+			JSONObject userJson = JSONUtil.parseObj(userData);
+			String userName = userJson.getStr("username");
+			String name = userJson.getStr("name");
+			UserInfo userDetails = new UserInfo(userName, sub.toString(), name);
 			UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(userDetails,
 					null, ofNullable(userDetails).map(UserDetails::getAuthorities).orElse(new ArrayList<>()));
 			authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
 			SecurityContextHolder.getContext().setAuthentication(authentication);
-
-			// Execute login
-			if (tokenFromCookie == null && tokenFromParameter != null) {
-				Cookie cookie = new Cookie(AppConsts.TOKEN_NAME, tokenFromParameter);
-				cookie.setPath("/");
-				cookie.setHttpOnly(true);
-				response.addCookie(cookie);
-			}
-
 			chain.doFilter(request, response);
-		}
-		catch (AuthenticationException e) {
+
+		} catch (AuthenticationException e) {
 			// spring security filter 里面的异常，GlobalExceptionHandler 不能捕获
 			resolveException.commence(request, response, e);
 		}

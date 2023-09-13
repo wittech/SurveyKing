@@ -7,6 +7,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -65,6 +66,17 @@ public class UserInfo implements UserDetails, Serializable {
 
 	public UserInfo(String username) {
 		this.username = username;
+	}
+
+	public UserInfo(String username, String userId, String name) {
+		this.username = username;
+		this.password = "";
+		this.userId = userId;
+		this.name = name;
+		this.status = 1;
+		this.enabled = true;
+		this.authorityList =  new ArrayList<String>();
+		this.authorities = new HashSet<>();
 	}
 
 	@Override

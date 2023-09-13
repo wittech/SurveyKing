@@ -38,6 +38,7 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
+            <version>${org.projectlombok.version}</version>
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
@@ -77,7 +78,7 @@
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.26</version>
+            <version>8.0.33</version>
         </dependency>
         
         <dependency>
