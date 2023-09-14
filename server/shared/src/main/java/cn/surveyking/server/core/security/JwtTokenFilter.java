@@ -5,6 +5,7 @@ import cn.hutool.core.exceptions.ValidateException;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSON;
+import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import cn.hutool.jwt.JWT;
@@ -21,6 +22,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -35,6 +37,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static java.util.Optional.ofNullable;
 import static org.apache.commons.lang3.StringUtils.isBlank;
@@ -97,45 +102,69 @@ public class JwtTokenFilter extends OncePerRequestFilter {
 		}
 		// Get authorization cookie and validate
 		// Cookie tokenFromCookie = WebUtils.getCookie(request, AppConsts.TOKEN_NAME);
-		// WebSecurityConfig securityConfig = ContextHelper.getBean(WebSecurityConfig.class);
-		// String tokenFromParameter = securityConfig.getUrlTokenAuthentication().isEnabled()
-		// 		? request.getParameter(AppConsts.TOKEN_NAME)
-		// 		: null;
+		// WebSecurityConfig securityConfig =
+		// ContextHelper.getBean(WebSecurityConfig.class);
+		// String tokenFromParameter =
+		// securityConfig.getUrlTokenAuthentication().isEnabled()
+		// ? request.getParameter(AppConsts.TOKEN_NAME)
+		// : null;
 		// if (tokenFromCookie == null && isBlank(tokenFromParameter)) {
-		// 	chain.doFilter(request, response);
-		// 	return;
+		// chain.doFilter(request, response);
+		// return;
 		// }
 
 		// // Get jwt token and validate
-		// final String token = isNotBlank(tokenFromParameter) ? tokenFromParameter : tokenFromCookie.getValue().trim();
+		// final String token = isNotBlank(tokenFromParameter) ? tokenFromParameter :
+		// tokenFromCookie.getValue().trim();
 		// if (!jwtTokenUtil.validate(token)) {
-		// 	chain.doFilter(request, response);
-		// 	return;
+		// chain.doFilter(request, response);
+		// return;
 		// }
 
 		try {
 			// Get user identity and set it on the spring security context
-			// UserDetails userDetails = userService.loadUserById(jwtTokenUtil.getUser(token).getUserId());
+			// UserDetails userDetails =
+			// userService.loadUserById(jwtTokenUtil.getUser(token).getUserId());
 
-			// UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(userDetails,
-			// 		null, ofNullable(userDetails).map(UserDetails::getAuthorities).orElse(new ArrayList<>()));
-			// authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+			// UsernamePasswordAuthenticationToken authentication = new
+			// UsernamePasswordAuthenticationToken(userDetails,
+			// null, ofNullable(userDetails).map(UserDetails::getAuthorities).orElse(new
+			// ArrayList<>()));
+			// authentication.setDetails(new
+			// WebAuthenticationDetailsSource().buildDetails(request));
 
 			// SecurityContextHolder.getContext().setAuthentication(authentication);
 
 			// // Execute login
 			// if (tokenFromCookie == null && tokenFromParameter != null) {
-			// 	Cookie cookie = new Cookie(AppConsts.TOKEN_NAME, tokenFromParameter);
-			// 	cookie.setPath("/");
-			// 	cookie.setHttpOnly(true);
-			// 	response.addCookie(cookie);
+			// Cookie cookie = new Cookie(AppConsts.TOKEN_NAME, tokenFromParameter);
+			// cookie.setPath("/");
+			// cookie.setHttpOnly(true);
+			// response.addCookie(cookie);
 			// }
 
 			// chain.doFilter(request, response);
 			JSONObject userJson = JSONUtil.parseObj(userData);
 			String userName = userJson.getStr("username");
 			String name = userJson.getStr("name");
+
 			UserInfo userDetails = new UserInfo(userName, sub.toString(), name);
+			JSONArray roles = userJson.getJSONArray("roles");
+			if (roles != null && roles.size() > 0) {
+				Set<String> authorities = new HashSet<>();
+				authorities.add("ROLE_admin");
+				// roles.forEach(role -> {
+				// authorities.add("ROLE_" + role.getCode());
+				// Arrays.stream(role.getAuthority().split(",")).forEach(authority -> {
+				// authorities.add(authority);
+				// });
+				// });
+				// 设置用户的管理权限
+				userDetails.setAuthorities(
+						authorities.stream().map(authority -> (GrantedAuthority) () -> authority)
+								.collect(Collectors.toSet()));
+			}
+
 			UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(userDetails,
 					null, ofNullable(userDetails).map(UserDetails::getAuthorities).orElse(new ArrayList<>()));
 			authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

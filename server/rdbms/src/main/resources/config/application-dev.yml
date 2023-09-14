@@ -3,6 +3,11 @@ spring:
   h2:
     enabled:
       true console:
+  redis:
+    host: ip
+    port: 9761
+    password: pwd
+    database: 2
   datasource:
 #    username: sa
 #    password: sa
