@@ -65,6 +65,10 @@ public class JwtTokenFilter extends OncePerRequestFilter {
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
 		String authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+		if(StrUtil.isEmpty(authorizationHeader)){
+			chain.doFilter(request, response);
+			return;
+		}
 		String deviceId = request.getHeader("x-device-id");
 		String accessToken = authorizationHeader.substring(TOKEN_TYPE_BEARER.length());
 		if (StrUtil.isEmpty(deviceId) || StrUtil.isEmpty(accessToken)) {
